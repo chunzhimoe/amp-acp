@@ -173,6 +173,38 @@ describe('AmpAcpAgent prompt() continue option', () => {
     expect(saved.at(-1)?.model).toBeUndefined();
   });
 
+  it('does not echo the user prompt back as a live session update', async () => {
+    const updates: Array<{ sessionUpdate?: string }> = [];
+    const client = {
+      ...mockClient,
+      sessionUpdate: async (notification: { update?: { sessionUpdate?: string } }) => {
+        if (notification.update) updates.push(notification.update);
+      },
+    } as unknown as AcpClient;
+    const localTransport = {
+      name: 'cli' as const,
+      async *execute() {
+        yield { type: 'user', message: { content: [{ type: 'text', text: 'hello' }] } };
+        yield { type: 'system', subtype: 'init', session_id: threadId };
+        yield { type: 'assistant', message: { content: [{ type: 'text', text: 'hi' }] } };
+        yield { type: 'result', subtype: 'success', is_error: false };
+      },
+    };
+    agent = new AmpAcpAgent(client, localTransport, {
+      discoverPluginModes: () => [],
+      discoverModels: () => [],
+      listAmpThreads: async () => [],
+    });
+    await agent.initialize({ protocolVersion: 1, clientCapabilities: {} });
+    const session = await agent.newSession({ cwd: '/tmp', mcpServers: [] });
+    await agent.prompt({
+      sessionId: session.sessionId,
+      prompt: [{ type: 'text', text: 'hello' }],
+    });
+    expect(updates.some((update) => update.sessionUpdate === 'user_message_chunk')).toBe(false);
+    expect(updates.some((update) => update.sessionUpdate === 'agent_message_chunk')).toBe(true);
+  });
+
   it('restarts the CLI process after a config change', async () => {
     const transport: AmpTransport = {
       name: 'cli',

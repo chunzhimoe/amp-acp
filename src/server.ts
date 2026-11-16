@@ -1214,7 +1214,9 @@ export class AmpAcpAgent {
           }
         }
 
-        if (message.type === 'assistant' || message.type === 'user') {
+        // The client already has the prompt from session/prompt. Forwarding Amp's
+        // user echo would show the same outgoing message twice in Devin.
+        if (message.type === 'assistant') {
           for (const n of toAcpNotifications(message, params.sessionId, s.acpState)) {
             try {
               await this.client.sessionUpdate(n);
