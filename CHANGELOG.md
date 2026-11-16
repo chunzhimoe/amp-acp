@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.13.1 - 2026-11-16
+
+### Added
+
+- List Amp account threads (`amp threads list --json`) in `session/list`, so clients can reopen threads started in the Amp app, CLI, or on another machine.
+
+### Fixed
+
+- Retry a turn without `--model` when Amp rejects the flag, and clear the saved model selection, instead of failing every prompt on that session.
+- Stop echoing the live user prompt back to ACP clients as `user_message_chunk`, which showed the outgoing message twice. Tool results in Amp user messages are still forwarded as `tool_call_update`.
+
+### Verification
+
+- `bun run lint`
+- `bun test src/` — 246 pass, 0 fail
+- `bun run test:binary` — 18 pass, 3 skipped, 0 fail
+
 ## 0.13.0 - 2026-11-15
 
 ### Changed
