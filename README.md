@@ -117,7 +117,7 @@ Clients that advertise `clientCapabilities.auth.terminal: true` receive a standa
 - **Conversation continuity** — Thread context is preserved across multiple prompts within a session
 - **Session resume** — `session/load` reattaches to the underlying Amp thread after amp-acp restarts, so ACP clients can reopen earlier sessions
 - **Session metadata** — each session publishes a title derived from the first prompt (60 characters, whitespace collapsed) and an `updatedAt` timestamp after every turn via `session_info_update`; both are persisted with the session mapping and restored on load or resume
-- **Session discovery and lifecycle** — `session/list` returns persisted sessions (including new sessions that have not started an Amp thread yet), while `session/delete` and `session/close` cancel active and queued work. Delete removes only amp-acp's local mapping; the Amp thread itself is retained
+- **Session discovery and lifecycle** — `session/list` returns persisted sessions (including new sessions that have not started an Amp thread yet) and Amp account threads from `amp threads list`, so clients can reopen work started in the Amp app, CLI, or another machine. `session/delete` and `session/close` cancel active and queued work. Delete removes only amp-acp's local mapping; the Amp thread itself is retained
 - **Native thread lifecycle** — ACP clients can persist Amp's durable thread ID and archive or unarchive that exact thread
 - **Native steering** — local CLI sessions keep the Amp process alive across cancellation and send the replacement prompt with Amp's `steer` marker instead of queuing it as ordinary input
 - **Token usage** — each `session/prompt` answers with the turn's token usage (`PromptResponse.usage`: input, output, cache reads and writes), counted from the usage Amp reports for each model response
@@ -199,7 +199,7 @@ Both values are stored alongside the ACP-to-Amp mapping and restored by `session
 
 amp-acp advertises `sessionCapabilities.list`, `delete`, `close`, and `resume`.
 
-- `session/list` returns persisted sessions filtered by `cwd` when supplied, newest `updatedAt` first. A session appears as soon as it is created, before its first prompt starts an Amp thread. Results are paginated with an opaque `nextCursor`.
+- `session/list` returns persisted sessions plus Amp account threads from `amp threads list`, newest `updatedAt` first. A local session appears as soon as it is created, before its first prompt starts an Amp thread. Account threads that have no local mapping get a stable ACP session ID so `session/load` and `session/resume` can reopen them. When `cwd` is supplied, empty local sessions still filter by working directory; Amp threads are listed across directories so clients can reopen work from other machines. Results are paginated with an opaque `nextCursor`. Set `AMP_ACP_LIST_AMP_THREADS=0` to keep listing local mappings only.
 - `session/close` cancels the active turn and any queued prompts, then releases the in-memory session. The persisted mapping stays, so `session/load` can reopen it later.
 - `session/delete` does the same cancellation and removes the local mapping. It does **not** delete or archive the underlying Amp thread; the thread remains available through the Amp CLI. Delete and close are idempotent, including for unknown session IDs.
 
@@ -320,7 +320,7 @@ The v2 adapter keeps the existing session, model, queue, and Amp transport behav
 - `session/prompt` returns `messageId` immediately and reports the background turn through `state_update` (`running` then `idle`).
 - Client config options are exposed as v2 `configId` fields.
 - v1 `plan` updates become v2 `plan_update`; v1 `tool_call` updates become v2 `tool_call_update`.
-- `session/resume`, `session/close`, `session/list`, and `session/set_config_option` forward to the existing implementation. Listing discovers adapter-persisted sessions, with working-directory filtering, titles, timestamps, and cursor pagination; it does not enumerate all Amp account threads.
+- `session/resume`, `session/close`, `session/list`, and `session/set_config_option` forward to the existing implementation. Listing merges adapter-persisted sessions with Amp account threads from `amp threads list`, with titles, timestamps, and cursor pagination. Empty local sessions still filter by working directory; set `AMP_ACP_LIST_AMP_THREADS=0` to disable account-thread discovery.
 
 v1 remains the default and is unchanged for Zed, Lody, and other clients that negotiate ACP v1. The v2 adapter is a compatibility bridge, not yet a native v2 implementation: Amp's internal queue and cancellation still drive turns, and there is no v2-native steering or persisted plan identity. The v2 bridge does not register or advertise the v1 `amp-acp/thread-lifecycle` and `amp-acp/steering` extensions. Execution failures use its existing error-notice and idle-state path with stop reason `refusal`; `session/prompt` still returns a `messageId` immediately.
 

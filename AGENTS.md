@@ -18,6 +18,7 @@ This is an ACP (Agent Client Protocol) adapter that bridges Amp Code to ACP-comp
 - `src/server.ts` — `AmpAcpAgent` class: handles session creation, listing, deletion, and closure; serializes prompts per session with a bounded queue, next-turn steering, and cancel semantics; advertises Amp slash commands; manages MCP config; and calls `@ampcode/sdk` (formerly `@sourcegraph/amp-sdk`)
 - `src/amp-transport.ts` — Executes Amp through the CLI or SDK and manages native thread archival; explicit model selections use `--model` via the CLI, including SDK fallback for local and Orb sessions; image turns use CLI JSON input locally or uploaded `--attach` files for Orbs
 - `src/thread-mapping-store.ts` — Persists durable ACP-session-to-Amp-thread mappings, session settings, title, and last-updated timestamp; lists and deletes records for session lifecycle operations
+- `src/amp-threads.ts` — Lists Amp account threads through `amp threads list --json` and assigns stable ACP session IDs so `session/list` can surface threads that have no local mapping yet
 - `src/thread-history.ts` — Exports Amp thread messages, title, and timestamp for `session/load` replay and metadata recovery
 - `src/to-acp.ts` — Converts Amp stream events to ACP `sessionUpdate` notifications, including tool call names, raw output, file diffs, message IDs, and Amp todo calls as `plan` updates
 - `src/mcp-config.ts` — Converts ACP MCP server configs to Amp SDK format

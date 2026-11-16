@@ -59,6 +59,14 @@ import {
 } from './turn-events.js';
 import { createAcpConversionState, toAcpNotifications, type AcpConversionState } from './to-acp.js';
 import { exportThreadDetails, exportThreadHistory, historyToNotifications, type ThreadHistoryExporter } from './thread-history.js';
+import {
+  ampThreadIdFromSessionId,
+  cwdFromThreadTree,
+  listAmpAccountThreads,
+  listAmpThreadsEnabled,
+  sessionIdForAmpThread,
+  type AmpAccountThread,
+} from './amp-threads.js';
 import path from 'node:path';
 import packageJson from '../package.json';
 
@@ -454,6 +462,8 @@ interface AmpAcpAgentOptions {
   discoverPluginModes?: (cwd: string) => PluginAgentMode[];
   /** Override model discovery; tests pass a stub to isolate from the Amp CLI. */
   discoverModels?: (cwd: string) => DiscoveredAmpModel[];
+  /** Override Amp account thread listing; tests pass a stub to isolate from the Amp CLI. */
+  listAmpThreads?: () => Promise<AmpAccountThread[]>;
 }
 
 export class AmpAcpAgent {
@@ -469,6 +479,7 @@ export class AmpAcpAgent {
   private replayRetry: { attempts: number; delayMs: number };
   private discoverPluginModes: (cwd: string) => PluginAgentMode[];
   private discoverModels: (cwd: string) => DiscoveredAmpModel[];
+  private listAmpThreads: () => Promise<AmpAccountThread[]>;
   private warnedUnsupportedEffort = false;
 
   constructor(
@@ -485,6 +496,7 @@ export class AmpAcpAgent {
     this.replayRetry = options.replayRetry ?? { attempts: 5, delayMs: 2000 };
     this.discoverPluginModes = options.discoverPluginModes ?? discoverPluginModesFromDir;
     this.discoverModels = options.discoverModels ?? discoverModelsFromCli;
+    this.listAmpThreads = options.listAmpThreads ?? listAmpAccountThreads;
   }
 
   async initialize(request: InitializeRequest): Promise<InitializeResponseWithAgentInfo> {
@@ -593,7 +605,7 @@ export class AmpAcpAgent {
     let session = this.sessions.get(params.sessionId);
 
     if (!session) {
-      const mapping = await this.threadStore.load(params.sessionId);
+      const mapping = await this.mappingForSession(params.sessionId, params.cwd);
       if (!mapping) {
         throw RequestError.invalidParams(undefined, `No durable Amp thread mapping for ACP session ${params.sessionId}`);
       }
@@ -751,7 +763,7 @@ export class AmpAcpAgent {
   }
 
   async resumeSession(params: ResumeSessionRequest): Promise<ResumeSessionResponse> {
-    const mapping = await this.threadStore.load(params.sessionId);
+    const mapping = await this.mappingForSession(params.sessionId, params.cwd);
     if (!mapping) {
       throw RequestError.invalidParams(undefined, `No durable Amp thread mapping for ACP session ${params.sessionId}`);
     }
@@ -869,9 +881,9 @@ export class AmpAcpAgent {
   }
 
   async listSessions(params: ListSessionsRequest): Promise<ListSessionsResponse> {
-    const mappings = await this.threadStore.list?.() ?? [];
+    const mappings = await this.mergeAccountThreads(await this.threadStore.list?.() ?? []);
     const filtered = params.cwd
-      ? mappings.filter((mapping) => mapping.cwd === params.cwd)
+      ? mappings.filter((mapping) => mapping.threadId != null || mapping.cwd === params.cwd)
       : mappings;
     filtered.sort((a, b) => {
       const byTime = (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '');
@@ -899,6 +911,60 @@ export class AmpAcpAgent {
       sessions,
       ...(nextOffset < filtered.length ? { nextCursor: encodeSessionCursor(nextOffset) } : {}),
     };
+  }
+
+  private async mappingForSession(sessionId: string, cwd?: string): Promise<AmpThreadMapping | null> {
+    const persisted = await this.threadStore.load(sessionId);
+    if (persisted) return persisted;
+    if (!listAmpThreadsEnabled()) return null;
+    const threadId = ampThreadIdFromSessionId(sessionId);
+    if (!threadId) return null;
+    return {
+      sessionId,
+      threadId,
+      ...(cwd ? { cwd } : {}),
+    };
+  }
+
+  private async mergeAccountThreads(mappings: AmpThreadMapping[]): Promise<AmpThreadMapping[]> {
+    if (!listAmpThreadsEnabled()) return mappings;
+    let accountThreads: AmpAccountThread[];
+    try {
+      accountThreads = await this.listAmpThreads();
+    } catch (error) {
+      console.error('[acp] failed to list Amp account threads', error);
+      return mappings;
+    }
+    if (accountThreads.length === 0) return mappings;
+
+    const merged = [...mappings];
+    const byThreadId = new Map<string, AmpThreadMapping>();
+    const sessionIds = new Set<string>();
+    for (const mapping of merged) {
+      sessionIds.add(mapping.sessionId);
+      if (mapping.threadId) byThreadId.set(mapping.threadId, mapping);
+    }
+    for (const thread of accountThreads) {
+      const existing = byThreadId.get(thread.id);
+      if (existing) {
+        if (thread.title) existing.title = thread.title;
+        if (thread.updated) existing.updatedAt = thread.updated;
+        const cwd = cwdFromThreadTree(thread.tree);
+        if (cwd && !existing.cwd) existing.cwd = cwd;
+        continue;
+      }
+      const sessionId = sessionIdForAmpThread(thread.id);
+      if (sessionIds.has(sessionId)) continue;
+      const cwd = cwdFromThreadTree(thread.tree);
+      merged.push({
+        sessionId,
+        threadId: thread.id,
+        ...(thread.title ? { title: thread.title } : {}),
+        ...(thread.updated ? { updatedAt: thread.updated } : {}),
+        ...(cwd ? { cwd } : {}),
+      });
+    }
+    return merged;
   }
 
   async deleteSession(params: DeleteSessionRequest): Promise<DeleteSessionResponse> {

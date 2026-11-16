@@ -88,6 +88,7 @@ describe('ACP client to compiled amp-acp binary', () => {
         AMP_ACP_TRANSPORT: 'cli',
         AMP_ACP_CANCEL_MODE: 'steer',
         AMP_CLI_PATH: fakeAmpPath,
+        AMP_ACP_LIST_AMP_THREADS: '0',
         AMP_API_KEY: 'test-key',
       },
       stdio: ['pipe', 'pipe', 'pipe'],

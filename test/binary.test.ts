@@ -66,7 +66,7 @@ describe('Binary integration tests', () => {
     // Scrub ambient Amp credentials: these protocol tests exercise the
     // unauthenticated paths, so the binary must not inherit a developer's or
     // an orb's AMP_API_KEY.
-    const childEnv = { ...process.env };
+    const childEnv = { ...process.env, AMP_ACP_LIST_AMP_THREADS: '0' };
     delete childEnv.AMP_API_KEY;
     proc = spawn(BINARY_PATH, [], {
       stdio: ['pipe', 'pipe', 'ignore'],

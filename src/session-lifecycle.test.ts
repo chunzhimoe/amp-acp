@@ -43,12 +43,16 @@ describe('session list, delete, and close', () => {
     fs.rmSync(stateDir, { recursive: true, force: true });
   });
 
-  function createAgent(transport = fastTransport()) {
+  function createAgent(
+    transport = fastTransport(),
+    listAmpThreads: () => Promise<Array<{ id: string; title?: string; updated?: string; tree?: string }>> = async () => [],
+  ) {
     return new AmpAcpAgent(createClient(), transport, {
       exportThread: async () => [],
       replayRetry: { attempts: 1, delayMs: 0 },
       discoverPluginModes: () => [],
       discoverModels: () => [],
+      listAmpThreads,
     });
   }
 
@@ -201,5 +205,53 @@ describe('session list, delete, and close', () => {
     await expect(active).resolves.toEqual({ stopReason: 'cancelled' });
     await expect(queued).resolves.toEqual({ stopReason: 'cancelled' });
     expect((await agent.listSessions({})).sessions).toEqual([]);
+  });
+
+  it('lists unmapped Amp account threads and loads them by a stable session ID', async () => {
+    const accountThread = 'T-01a1e353-9bec-76fb-9c6c-b483a71debd2';
+    const agent = createAgent(fastTransport(), async () => [{
+      id: accountThread,
+      title: 'ACP session sync',
+      updated: '2026-11-16T07:50:56.408Z',
+      tree: 'file:///Users/chunzhi/Documents',
+    }]);
+    await agent.initialize({ protocolVersion: 1, clientCapabilities: {} });
+
+    const listed = await agent.listSessions({ cwd: '/tmp' });
+    expect(listed.sessions).toEqual([{
+      sessionId: 'S-t01a1e3539bec76fb9c6cb483a71debd2-ampacp',
+      cwd: '/Users/chunzhi/Documents',
+      title: 'ACP session sync',
+      updatedAt: '2026-11-16T07:50:56.408Z',
+    }]);
+
+    const loaded = await agent.loadSession({
+      sessionId: listed.sessions[0]!.sessionId,
+      cwd: '/tmp',
+      mcpServers: [],
+    });
+    expect(loaded.configOptions).toBeDefined();
+    expect(agent.sessions.get(listed.sessions[0]!.sessionId)?.threadId).toBe(accountThread);
+  });
+
+  it('keeps a local mapping when it already points at an Amp thread', async () => {
+    const agent = createAgent(fastTransport(), async () => [{
+      id: threadId,
+      title: 'Account title',
+      updated: '2026-11-16T08:00:00.000Z',
+      tree: 'file:///Users/chunzhi/Documents',
+    }]);
+    await agent.initialize({ protocolVersion: 1, clientCapabilities: {} });
+    const session = await agent.newSession({ cwd: '/tmp', mcpServers: [] });
+    await agent.prompt({
+      sessionId: session.sessionId,
+      prompt: [{ type: 'text', text: 'Local title' }],
+    });
+
+    const listed = await agent.listSessions({});
+    expect(listed.sessions).toHaveLength(1);
+    expect(listed.sessions[0]!.sessionId).toBe(session.sessionId);
+    expect(listed.sessions[0]!.title).toBe('Account title');
+    expect(listed.sessions[0]!.updatedAt).toBe('2026-11-16T08:00:00.000Z');
   });
 });

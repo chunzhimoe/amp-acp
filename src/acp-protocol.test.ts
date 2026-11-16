@@ -113,6 +113,7 @@ describe('ACP Protocol End-to-End', () => {
         orbTransport: transport,
         discoverPluginModes: () => [],
         discoverModels: () => [{ modelId: 'anthropic/claude-opus-5-5', name: 'Claude Opus 5.5' }],
+        listAmpThreads: async () => [],
       }),
     );
     app.connect(ndJsonStream(agentToClient.writable, clientToAgent.readable));

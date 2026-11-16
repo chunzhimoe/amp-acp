@@ -65,6 +65,7 @@ function startClient(stateDir: string) {
       AMP_API_KEY: 'test-key',
       AMP_ACP_STATE_DIR: stateDir,
       AMP_ACP_DISABLE_PLUGIN_LIST: '1',
+      AMP_ACP_LIST_AMP_THREADS: '0',
       AMP_ACP_SYSTEM_PLUGIN_DIR: path.join(fixtureDir, 'no-plugins'),
     },
     stdio: ['pipe', 'pipe', 'pipe'],
