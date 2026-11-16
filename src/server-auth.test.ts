@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import path from 'node:path';
-import { getTerminalAuthCommand, isAuthError } from './server.js';
+import { getTerminalAuthCommand, isAuthError, isModelFlagDisabled } from './server.js';
 
 describe('isAuthError', () => {
   it('detects missing API key login flow errors', () => {
@@ -10,6 +10,14 @@ describe('isAuthError', () => {
 
   it('does not misclassify unrelated parse errors', () => {
     expect(isAuthError('Failed to parse JSON response, raw line: Unexpected token')).toBe(false);
+  });
+});
+
+describe('isModelFlagDisabled', () => {
+  it('detects Amp accounts that reject --model', () => {
+    expect(isModelFlagDisabled('Error: The --model flag is not enabled for your account.')).toBe(true);
+    expect(isModelFlagDisabled('Amp CLI process exited with code 1: Error: The --model flag is not enabled for your account.')).toBe(true);
+    expect(isModelFlagDisabled('Amp CLI process exited with code 1')).toBe(false);
   });
 });
 

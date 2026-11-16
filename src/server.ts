@@ -481,6 +481,8 @@ export class AmpAcpAgent {
   private discoverModels: (cwd: string) => DiscoveredAmpModel[];
   private listAmpThreads: () => Promise<AmpAccountThread[]>;
   private warnedUnsupportedEffort = false;
+  /** Once Amp rejects --model for this account, later turns omit it. */
+  private modelFlagUnsupported = false;
 
   constructor(
     client: AcpClient,
@@ -1148,7 +1150,7 @@ export class AmpAcpAgent {
       cwd: s.cwd,
       env: { TERM: 'dumb' },
       ...(s.agentMode ? { agentMode: s.agentMode } : {}),
-      ...(s.model ? { model: s.model } : {}),
+      ...(s.model && !this.modelFlagUnsupported ? { model: s.model } : {}),
       ...(effort && featuresSupported ? { effort } : {}),
       thinking: process.env.AMP_ACP_DISABLE_THINKING !== '1',
       executor: s.executor,
@@ -1253,6 +1255,13 @@ export class AmpAcpAgent {
       console.error('[amp] Execution error:', err);
       if (err instanceof RequestError) throw err;
       const detail = errorDetail(err);
+      if (s.model && isModelFlagDisabled(detail)) {
+        this.modelFlagUnsupported = true;
+        s.model = undefined;
+        await this.persistSessionQuiet(params.sessionId, s);
+        console.error('[acp] Amp account does not support --model; retrying without a selected model');
+        return this.executePrompt(params, s, turn);
+      }
       throw RequestError.internalError(
         detail ? { details: detail } : undefined,
         detail || undefined,
@@ -1513,6 +1522,10 @@ function errorDetail(error: unknown): string {
   return clean.length > MAX_ERROR_DETAIL_LENGTH
     ? `${clean.slice(0, MAX_ERROR_DETAIL_LENGTH)}...`
     : clean;
+}
+
+export function isModelFlagDisabled(message: string): boolean {
+  return message.toLowerCase().includes('the --model flag is not enabled');
 }
 
 export function isAuthError(message: string): boolean {

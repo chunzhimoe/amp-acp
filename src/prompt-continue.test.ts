@@ -130,6 +130,49 @@ describe('AmpAcpAgent prompt() continue option', () => {
     expect(localCalls[0]!.options.mode).toBeUndefined();
   });
 
+  it('retries without --model when Amp says the flag is not enabled', async () => {
+    const localCalls: { options: Record<string, unknown> }[] = [];
+    const localTransport = {
+      name: 'cli' as const,
+      async *execute({ options }: { options: Record<string, unknown> }) {
+        localCalls.push({ options: { ...options } });
+        if (options.model) {
+          throw new Error('Amp CLI process exited with code 1: Error: The --model flag is not enabled for your account.');
+        }
+        yield { type: 'system', subtype: 'init', session_id: threadId };
+        yield { type: 'result', subtype: 'success', is_error: false };
+      },
+    };
+    const saved: AmpThreadMapping[] = [];
+    agent = new AmpAcpAgent(mockClient, localTransport, {
+      threadStore: {
+        load: async () => saved.at(-1) ?? null,
+        save: async (mapping) => { saved.push({ ...mapping }); },
+      },
+      discoverPluginModes: () => [],
+      discoverModels: () => [{ modelId: 'anthropic/claude-opus-5-5', name: 'Claude Opus 5.5' }],
+      listAmpThreads: async () => [],
+    });
+    await agent.initialize({ protocolVersion: 1, clientCapabilities: {} });
+    const session = await agent.newSession({ cwd: '/tmp', mcpServers: [] });
+    await agent.setSessionConfigOption({
+      sessionId: session.sessionId,
+      configId: 'amp-model',
+      value: 'anthropic/claude-opus-5-5',
+    });
+    const result = await agent.prompt({
+      sessionId: session.sessionId,
+      prompt: [{ type: 'text', text: 'hello' }],
+    });
+
+    expect(result.stopReason).toBe('end_turn');
+    expect(localCalls).toHaveLength(2);
+    expect(localCalls[0]!.options.model).toBe('anthropic/claude-opus-5-5');
+    expect(localCalls[1]!.options.model).toBeUndefined();
+    expect(agent.sessions.get(session.sessionId)?.model).toBeUndefined();
+    expect(saved.at(-1)?.model).toBeUndefined();
+  });
+
   it('restarts the CLI process after a config change', async () => {
     const transport: AmpTransport = {
       name: 'cli',
