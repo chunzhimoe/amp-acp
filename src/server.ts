@@ -1214,10 +1214,12 @@ export class AmpAcpAgent {
           }
         }
 
-        // The client already has the prompt from session/prompt. Forwarding Amp's
-        // user echo would show the same outgoing message twice in Devin.
-        if (message.type === 'assistant') {
+        if (message.type === 'assistant' || message.type === 'user') {
           for (const n of toAcpNotifications(message, params.sessionId, s.acpState)) {
+            // The client already has the prompt from session/prompt. Forwarding Amp's
+            // user echo would show the same outgoing message twice in Devin. User
+            // messages still carry tool results, so only the echo is dropped.
+            if (n.update.sessionUpdate === 'user_message_chunk') continue;
             try {
               await this.client.sessionUpdate(n);
             } catch (e) {
